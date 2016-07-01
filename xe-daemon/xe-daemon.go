@@ -1,6 +1,7 @@
 package main
 
 import (
+	feature "../feature"
 	guestmetric "../guestmetric"
 	syslog "../syslog"
 	xenstoreclient "../xenstoreclient"
@@ -76,6 +77,17 @@ func main() {
 		{1, "CollectNetworkAddr", collector.CollectNetworkAddr},
 		{1, "CollectDisk", collector.CollectDisk},
 		{2, "CollectMemory", collector.CollectMemory},
+	}
+
+	featureIPSettingClient, err := feature.NewFeatureIPSetting(xs, true, *debugFlag)
+
+	if err != nil {
+		logger.Printf("featureIPSetting Run error: %v\n", err)
+	}
+
+	err = featureIPSettingClient.Run()
+	if err != nil {
+		logger.Printf("featureIPSetting Run error: %v\n", err)
 	}
 
 	lastUniqueID, err := xs.Read("unique-domain-id")
