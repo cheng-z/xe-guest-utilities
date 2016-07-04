@@ -71,6 +71,7 @@ type XenStoreClient interface {
 	WatchEvent(key string) (token string, ok bool)
 	UnWatch(path string, token string) error
 	StopWatch() error
+	Directory(path string) (string, error)
 }
 
 func ReadPacket(r io.Reader) (packet *Packet, err error) {
@@ -117,7 +118,6 @@ func (p *Packet) Write(w io.Writer) (err error) {
 		bw = bufio.NewWriter(w)
 	}
 	defer bw.Flush()
-
 	err = binary.Write(bw, binary.LittleEndian, p.OpCode)
 	if err != nil {
 		return err
@@ -269,11 +269,11 @@ func (xs *XenStore) Close() error {
 func (xs *XenStore) DO(req *Packet) (resp *Packet, err error) {
 	xs.xbFileReaderLocker.Lock()
 	defer xs.xbFileReaderLocker.Unlock()
+
 	err = req.Write(xs.xbFile)
 	if err != nil {
 		return nil, err
 	}
-
 	var r io.Reader
 	if xs.nonWatchQueue != nil {
 		data := <-xs.nonWatchQueue
@@ -289,6 +289,22 @@ func (xs *XenStore) Read(path string) (string, error) {
 	v := []byte(path + "\x00")
 	req := &Packet{
 		OpCode: XS_READ,
+		Req:    0,
+		TxID:   xs.tx,
+		Length: uint32(len(v)),
+		Value:  v,
+	}
+	resp, err := xs.DO(req)
+	if err != nil {
+		return "", err
+	}
+	return string(resp.Value), nil
+}
+
+func (xs *XenStore) Directory(path string) (string, error) {
+	v := []byte(path + "\x00")
+	req := &Packet{
+		OpCode: XS_DIRECTORY,
 		Req:    0,
 		TxID:   xs.tx,
 		Length: uint32(len(v)),
@@ -402,6 +418,11 @@ func (xs *XenStore) Watch(path string, token string) error {
 			Error error
 		}
 
+		//Lock non WatchQueue to avoid the miss use in DO
+		xs.xbFileReaderLocker.Lock()
+		xs.nonWatchQueue = make(chan []byte, 100)
+		xs.xbFileReaderLocker.Unlock()
+
 		xsDataChan := make(chan XSData, 100)
 		xsReadStop := make(chan bool)
 		go func(r io.Reader, out chan<- XSData, c <-chan bool) {
@@ -421,7 +442,6 @@ func (xs *XenStore) Watch(path string, token string) error {
 			}
 		}(xs.xbFileReader, xsDataChan, xsReadStop)
 
-		xs.nonWatchQueue = make(chan []byte, 100)
 		for {
 			select {
 			case <-xs.watchStopChan:
@@ -518,6 +538,10 @@ func (xs *CachedXenStore) DO(req *Packet) (resp *Packet, err error) {
 
 func (xs *CachedXenStore) Read(path string) (string, error) {
 	return xs.xs.Read(path)
+}
+
+func (xs *CachedXenStore) Directory(path string) (string, error) {
+	return xs.xs.Directory(path)
 }
 
 func (xs *CachedXenStore) Mkdir(path string) error {

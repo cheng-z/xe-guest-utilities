@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -60,6 +61,22 @@ func (f *FeatureIPSetting) Enable() {
 	return
 }
 
+func (f *FeatureIPSetting) GetChildrens(key string) []string {
+	var childrens []string
+	value, err := f.Client.Directory(controlKey)
+	if err != nil {
+		f.logger.Printf("GetChildrens failed %#v\n", err)
+	} else {
+		subkeys := strings.Split(string(value), "\x00")
+		for _, subkey := range subkeys {
+			if len(subkey) != 0 {
+				childrens = append(childrens, controlKey+"/"+subkey)
+			}
+		}
+	}
+	return childrens
+}
+
 func (f *FeatureIPSetting) Run() error {
 	err := f.Client.Watch(controlKey, token)
 	if err != nil {
@@ -74,6 +91,10 @@ func (f *FeatureIPSetting) Run() error {
 			f.Enable()
 			if _, ok := f.Client.WatchEvent(controlKey); ok {
 				f.logger.Printf("featureIPSetting get event")
+				childrens := f.GetChildrens(controlKey)
+				for _, subkey := range childrens {
+					f.logger.Printf("children %s", subkey)
+				}
 			}
 			select {
 			case <-ticker:
